@@ -44,10 +44,14 @@ An intelligent, end-to-end **Software Development Life Cycle (SDLC)** automation
 
 ---
 
-## 💻 Run Locally
+## 💻 Run Using Streamlit
+
+https://sujata2017-aipoweredsdlc.streamlit.app/
+
+
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.10+
 - [Groq API key](https://console.groq.com/)
 - OR [OpenAI API key](https://platform.openai.com/account/api-keys)
 
@@ -55,3 +59,6 @@ An intelligent, end-to-end **Software Development Life Cycle (SDLC)** automation
 
 ```bash
 pip install -r requirements.txt
+
+
+
