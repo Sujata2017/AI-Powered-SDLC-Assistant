@@ -253,7 +253,7 @@ with col2:
             deploy_choice = st.radio("How would you like to proceed?", [
                 "Continue without deployment",
                 "Push to GitHub",
-                "Run Locally via Streamlit"
+                #"Run Locally via Streamlit"
             ])
 
             if deploy_choice == "Continue without deployment":
