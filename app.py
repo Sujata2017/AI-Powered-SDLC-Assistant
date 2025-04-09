@@ -5,8 +5,9 @@ from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from agents import requirement, product_owner, design, code, security, test, deployment, monitoring, maintenance
 from graph.visualizer import render_langgraph_diagram
-from deployment.github_push import push_files_to_github
-
+#from deployment.github_push import push_files_to_github
+from deployment.github_multi_push import push_files_to_github
+import re
 
 
 
@@ -162,27 +163,109 @@ with col2:
 
 
 
+        #elif stage == "Code Generation":
         elif stage == "Code Generation":
-            result = code.code_generation_agent(llm, {"design_doc": st.session_state.design_doc})
-            st.session_state.code = result["code"]
-            st.code(result["code"], language="python")
+            st.subheader("Code Generation Stage")
 
-            code_rev = code.code_review_agent(llm, {"code": st.session_state.code})
-            sec_rev = security.security_review_agent(llm, {"code": st.session_state.code})
-            combined = f"### Code Review\n{code_rev['code_review']}\n\n### Security Review\n{sec_rev['security_review']}"
-            feedback = st.text_area("🔍 Code + Security Review", value=combined, height=250, key="code_security_review")
-            col1, col2 = st.columns(2)
-            if col1.button("✅ Approve Reviews"):
-                st.session_state.code_review = "APPROVED"
-                st.session_state.security_review = sec_rev["security_review"]
-                st.session_state.stage = "Write & Review Test Cases"
-                st.rerun()
-            if col2.button("✍️ Submit Feedback"):
-                st.session_state.code_review = feedback
-                st.session_state.security_review = feedback
-                st.rerun()
+            prompt_dynamic = f"""
+            You are an SDLC code generation agent.
 
-        
+            Given the Design Document below:
+            {st.session_state.design_doc}
+
+    
+            Generate the necessary code files clearly labeled in the following format:
+
+            File: <filename with extension>
+            ```<language>
+            # your code here
+            ```
+
+            Clearly label and separate each file.
+            """
+
+            try:
+                response = llm.invoke(prompt_dynamic)
+                response_text = response.content if hasattr(response, 'content') else str(response)
+
+                # Parse files dynamically using robust regex
+                file_pattern = r"File: (.+?)\n```[a-z]*\n(.*?)```"
+                files = re.findall(file_pattern, response_text, re.DOTALL)
+
+                if files:
+                    st.success("✅ Code generated successfully!")
+                    st.subheader("📂 Generated Files")
+                    combined_code = ""  # Combined sanitized code for review agents
+
+                    for filename, file_content in files:
+                        file_content = file_content.strip()
+                        st.session_state[filename] = file_content
+                        combined_code += f"# {filename}\n{file_content}\n\n"
+
+                        ext = filename.split('.')[-1]
+                        lang_map = {'py':'python', 'html':'html', 'js':'javascript', 'css':'css',
+                            'sql':'sql', 'json':'json', 'md':'markdown', 'yaml':'yaml'}
+                        language = lang_map.get(ext, 'plaintext')
+
+                        with st.expander(f"{filename}"):
+                            st.code(file_content, language=language)
+                            st.download_button(f"Download {filename}", file_content, file_name=filename)
+                else:
+                    st.warning("⚠️ No clearly labeled files found. Try regenerating.")
+                    st.stop()
+
+
+                    # Sanitize combined code for review purposes
+                def sanitize_code(raw_code):
+                    lines = raw_code.splitlines()
+                    sanitized = []
+                    for line in lines:
+                        stripped = line.strip()
+                        if not stripped:
+                            sanitized.append("")  # blank line
+                        elif stripped.startswith(("#", "def ", "class ", "import ", "from ", "@", "return", 
+                                         "print", "for ", "if ", "while ", "try:", "except", "{", "}")):
+                            sanitized.append(line)
+                        else:
+                            sanitized.append(f"# {line}")
+                    return "\n".join(sanitized)
+                
+                cleaned_code = sanitize_code(combined_code)
+                st.session_state.code = cleaned_code
+
+                # Display sanitized combined code clearly
+                st.code(cleaned_code, language="python")
+
+                # Perform combined Code + Security review (exactly as per your previous working code)
+                code_rev = code.code_review_agent(llm, {"code": st.session_state.code})
+                sec_rev = security.security_review_agent(llm, {"code": st.session_state.code})
+
+                combined_reviews = f"### Code Review\n{code_rev['code_review']}\n\n### Security Review\n{sec_rev['security_review']}"
+
+                feedback = st.text_area("🔍 Code + Security Review", value=combined_reviews, height=250, key="code_security_review")
+
+
+
+                col1, col2 = st.columns(2)
+                if col1.button("✅ Approve Reviews"):
+                    st.session_state.code_review = "APPROVED"
+                    st.session_state.security_review = sec_rev["security_review"]
+                    st.session_state.stage = "Write & Review Test Cases"
+                    st.rerun()
+
+                if col2.button("✍️ Submit Feedback"):
+                    st.session_state.code_review = feedback
+                    st.session_state.security_review = feedback
+                    st.success("✅ Feedback saved.")
+
+
+            except Exception as e:
+                st.error(f"Code generation failed: {str(e)}")
+
+
+            
+
+
 
 
 
@@ -253,7 +336,6 @@ with col2:
             deploy_choice = st.radio("How would you like to proceed?", [
                 "Continue without deployment",
                 "Push to GitHub",
-                #"Run Locally via Streamlit"
             ])
 
             if deploy_choice == "Continue without deployment":
@@ -264,29 +346,38 @@ with col2:
                     st.rerun()
 
             elif deploy_choice == "Push to GitHub":
+            #elif deploy_choice == "Push to GitHub & Deploy to Streamlit":
                 github_token = st.text_input("🔐 GitHub Token", type="password", key="gh_token")
                 github_repo = st.text_input("📦 GitHub Repo (e.g., yourusername/yourrepo)", key="gh_repo")
 
                 if github_token and github_repo:
-                    from deployment.github_push import push_files_to_github
-
-                    files = {
-                        "README.md": "# AI SDLC Deployment\nThis repo was created by the Streamlit app.",
-                        "code.py": st.session_state.get("code", "# No code found."),
-                        "design_doc.md": st.session_state.get("design_doc", ""),
-                        "test_cases.txt": st.session_state.get("test_cases", ""),
-                        "qa_result.txt": st.session_state.get("qa_result", "")
-                    }
-
-                    if st.button("🚀 Deploy to GitHub"):
+                    if st.button("🚀 Push to GitHub"):
                         try:
+                            # Gather all generated files from session state dynamically
+                            files = {filename: content for filename, content in st.session_state.items()
+                                    if isinstance(content, str) and '.' in filename}
+                            
+                            
+
+                            # Add a README.md if missing
+                            if "README.md" not in files:
+                                files["README.md"] = "# Streamlit App\nDeployed by AI SDLC Assistant."
+
+                            # Push files to GitHub using existing logic
                             push_files_to_github(github_token, github_repo, files)
-                            st.success(f"✅ Code pushed to GitHub: https://github.com/{github_repo}")
+
+                            repo_url = f"https://github.com/{github_repo}"
+                            st.success(f"✅ Code pushed successfully to GitHub: [{github_repo}]({repo_url})")     
+
+
                             st.session_state.deployment_status = f"Deployed to GitHub repo: {github_repo}"
                             st.session_state.stage = "Monitoring"
                             st.rerun()
+
                         except Exception as e:
-                            st.error(f"❌ Deployment failed: {str(e)}")
+                            st.error(f"❌ Deployment failed: {str(e)}")   
+
+
 
 
             
@@ -310,20 +401,3 @@ with col2:
             st.session_state.maintenance_done = result["maintenance_done"]
             st.code(result["maintenance_done"])
             st.success("🎉 Workflow complete! Artifacts available in sidebar.")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
