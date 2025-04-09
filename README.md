@@ -46,7 +46,7 @@ An intelligent, end-to-end **Software Development Life Cycle (SDLC)** automation
 
 ## 💻 Run Using Streamlit
 
-https://sujata2017-aipoweredsdlc.streamlit.app/
+https://ai-powered-sdlc-assistant-latest.streamlit.app/
 
 
 
